@@ -97,6 +97,31 @@ button.go:focus-visible{outline:2px solid var(--ink); outline-offset:2px;}
   border:1.5px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer;
 }
 .copyBtn:hover{border-color:var(--accent); color:var(--accent);}
+
+.parts{border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:14px 0;}
+.prow{display:grid; grid-template-columns:150px 1fr auto; gap:10px; align-items:center;
+  padding:9px 12px; border-bottom:1px solid var(--line); background:#FBFCFA;}
+.prow:last-child{border-bottom:none;}
+.prow:nth-child(even){background:var(--card);}
+.plabel{font-size:12.5px; font-weight:600; color:var(--muted); display:flex; align-items:center; gap:7px;}
+.plabel i{width:10px; height:10px; border-radius:3px; flex:none;}
+.pval{font-family:'IBM Plex Mono',monospace; font-size:14.5px; word-break:break-all;}
+.pval.plain{font-family:'Archivo',sans-serif;}
+.miniCopy{
+  font:inherit; font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px;
+  border:1.5px solid var(--line); background:var(--card); color:var(--muted); cursor:pointer; white-space:nowrap;
+}
+.miniCopy:hover{border-color:var(--accent); color:var(--accent);}
+.miniCopy.done{border-color:var(--valid); color:var(--valid);}
+@media(max-width:540px){.prow{grid-template-columns:1fr auto;}.plabel{grid-column:1/-1; margin-bottom:-4px;}}
+
+.bankBox{margin-top:4px;}
+.bankBox .bhead{font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:16px 0 8px;}
+.bnote{font-size:13px; color:var(--muted); line-height:1.5;}
+.spin{display:inline-block; width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--accent);
+  border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@media(prefers-reduced-motion:reduce){.spin{animation:none;}}
 .errList{list-style:none;}
 .errList li{font-size:14px; color:var(--invalid); padding:4px 0; padding-left:20px; position:relative;}
 .errList li::before{content:"×"; position:absolute; left:0; font-weight:700;}
@@ -151,7 +176,7 @@ footer{margin-top:28px; font-size:12.5px; color:var(--muted); line-height:1.6;}
 </section>
 
 <footer>
-  <p><strong>How it works:</strong> every IBAN carries two check digits computed with the ISO 7064 mod-97-10 algorithm. A valid checksum means the IBAN is <em>well-formed</em>; it does not prove the account exists. Bank-name and BIC lookups need an up-to-date bank directory, which this offline tool intentionally doesn't bundle.</p>
+  <p><strong>How it works:</strong> every IBAN carries two check digits computed with the ISO 7064 mod-97-10 algorithm — all validation and calculation happens locally in your browser. A valid checksum means the IBAN is <em>well-formed</em>; it does not prove the account exists. BIC &amp; bank names come from the free OpenIBAN directory service (AT, BE, CH, DE, LI, LU, NL) — that lookup is the only network request this page ever makes, and it sends nothing but the IBAN being checked.</p>
 </footer>
 </div>
 
@@ -222,19 +247,17 @@ const esc = s => s.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"'
 
 function segmentSpans(iban){
   const cc=iban.slice(0,2);
-  const parts=[["Country",2,"country"],["IBAN check",2,"check"]];
+  const head=[["Country",2,"country"],["IBAN check digits",2,"check"]];
   let rest;
   if(SEGMENTS[cc] && SEGMENTS[cc].reduce((a,s)=>a+s[1],0)===iban.length-4){ rest=SEGMENTS[cc]; }
   else { rest=[["Account (BBAN)",iban.length-4,"acct"]]; }
-  const all=parts.concat(rest);
-  // char -> class map, plus legend
-  const cls=[]; const legend=[];
+  const all=head.concat(rest);
+  const cls=[]; const parts=[];
   let pos=0;
   for(const [label,len,k] of all){
-    legend.push([label,k]);
+    parts.push({label, value: iban.slice(pos,pos+len), k});
     for(let i=0;i<len;i++) cls[pos++]=k;
   }
-  // build grouped-by-4 markup
   let html='';
   for(let g=0; g<iban.length; g+=4){
     let grp='';
@@ -242,21 +265,72 @@ function segmentSpans(iban){
       grp += `<span class="seg seg-${cls[i]}">${iban[i]}</span>`;
     html += `<span class="grp">${grp}</span>`;
   }
-  const legendHtml = legend.map(([label,k])=>
-    `<span class="chip"><i style="background:var(--seg-${k})"></i>${esc(label)}</span>`).join('');
-  return {html, legendHtml};
+  return {html, parts};
+}
+
+function partRow(label, value, opts={}){
+  const dot = opts.k ? `<i style="background:var(--seg-${opts.k})"></i>` : `<i style="background:var(--line)"></i>`;
+  return `<div class="prow">
+    <span class="plabel">${dot}${esc(label)}</span>
+    <span class="pval ${opts.plain?'plain':''}">${esc(opts.display||value)}</span>
+    <button class="miniCopy" data-copy="${esc(value)}">Copy</button>
+  </div>`;
+}
+
+function wireCopy(el){
+  el.querySelectorAll('[data-copy]').forEach(b=>{
+    if(b.dataset.wired) return; b.dataset.wired='1';
+    b.addEventListener('click',()=>{
+      navigator.clipboard.writeText(b.dataset.copy).then(()=>{
+        const old=b.textContent; b.textContent='Copied ✓'; b.classList.add('done');
+        setTimeout(()=>{ b.textContent=old; b.classList.remove('done'); },1500);
+      });
+    });
+  });
+}
+
+/* ---- BIC & bank-name lookup (OpenIBAN — public directories for these countries) ---- */
+const LOOKUP_CC=['AT','BE','CH','DE','LI','LU','NL'];
+async function lookupBank(iban, box){
+  const cc=iban.slice(0,2);
+  box.innerHTML=`<div class="bhead">Bank &amp; BIC</div>`;
+  if(!LOOKUP_CC.includes(cc)){
+    box.innerHTML+=`<p class="bnote">BIC &amp; bank-name lookup is available for ${LOOKUP_CC.join(', ')} — countries with public bank directories. Other countries need a licensed directory.</p>`;
+    return;
+  }
+  box.innerHTML+=`<p class="bnote" id="bankStatus"><span class="spin"></span>Looking up bank &amp; BIC…</p>`;
+  try{
+    const r=await fetch(`https://openiban.com/validate/${iban}?getBIC=true&validateBankCode=true`);
+    if(!r.ok) throw new Error('http '+r.status);
+    const d=await r.json();
+    const b=d.bankData||{};
+    if(b.bic || b.name){
+      let rows='';
+      if(b.name) rows+=partRow('Bank', b.name, {plain:true});
+      if(b.bic)  rows+=partRow('BIC', b.bic, {k:'bank'});
+      if(b.city) rows+=partRow('City', (b.zip?b.zip+' ':'')+b.city, {plain:true});
+      box.innerHTML=`<div class="bhead">Bank &amp; BIC</div><div class="parts">${rows}</div>
+        <p class="bnote">Source: OpenIBAN public directory. Directory data can lag behind bank mergers — verify the BIC with the recipient for important payments.</p>`;
+      wireCopy(box);
+    } else {
+      box.querySelector('#bankStatus').innerHTML='No bank found for this bank code in the public directory.';
+    }
+  }catch(e){
+    box.querySelector('#bankStatus').innerHTML='Bank lookup unreachable — you may be offline, or this page is running in a sandbox that blocks external requests. Download the file and open it directly for live BIC lookups. The IBAN result above is computed locally and unaffected.';
+  }
 }
 
 function resultCard(el, iban, ok, msg, errors){
   let inner='';
   if(ok){
-    const {html, legendHtml}=segmentSpans(iban);
+    const {html, parts}=segmentSpans(iban);
     const pretty=iban.replace(/(.{4})/g,'$1 ').trim();
+    const rows = partRow('IBAN', pretty) + parts.map(p=>partRow(p.label, p.value, {k:p.k})).join('');
     inner=`
       <div class="verdict"><span class="stamp ok">Valid</span><p>${esc(msg)}</p></div>
       <div class="ibanBox">${html}</div>
-      <div class="legend">${legendHtml}</div>
-      <button class="copyBtn" data-copy="${pretty}">Copy IBAN</button>`;
+      <div class="parts">${rows}</div>
+      <div class="bankBox"></div>`;
   } else {
     inner=`
       <div class="verdict"><span class="stamp bad">Invalid</span><p>${esc(msg)}</p></div>
@@ -264,9 +338,8 @@ function resultCard(el, iban, ok, msg, errors){
   }
   el.innerHTML=`<hr style="border:none;border-top:1px solid var(--line);margin:20px 0">`+inner;
   el.classList.add('show');
-  el.querySelectorAll('.copyBtn').forEach(b=>b.addEventListener('click',()=>{
-    navigator.clipboard.writeText(b.dataset.copy).then(()=>{ b.textContent='Copied ✓'; setTimeout(()=>b.textContent='Copy IBAN',1500); });
-  }));
+  wireCopy(el);
+  if(ok) lookupBank(iban, el.querySelector('.bankBox'));
 }
 
 /* ================= validate flow ================= */
