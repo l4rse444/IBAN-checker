@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IBAN Calculator — validate &amp; build IBANs, ad-free</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EBEEE9; --card:#FFFFFF; --ink:#1B2A22; --muted:#5C6B61; --line:#CBD4CA;
+  --accent:#24604B; --accent-soft:#E2ECE6;
+  --valid:#1E7A4E; --invalid:#A83226;
+  --seg-country:#24604B; --seg-check:#9A6B15; --seg-bank:#2A5D8A; --seg-branch:#6A4A93; --seg-acct:#1B2A22; --seg-natl:#A83226;
+  --radius:10px;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html{background:var(--paper);}
+body{
+  font-family:'Archivo',system-ui,sans-serif; color:var(--ink);
+  min-height:100vh; padding:28px 16px 64px;
+  background:
+    linear-gradient(0deg, transparent 31px, rgba(27,42,34,.045) 32px) 0 0/100% 32px,
+    var(--paper);
+}
+.wrap{max-width:780px; margin:0 auto;}
+header{display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:22px;}
+.wordmark{font-weight:800; font-size:clamp(26px,5vw,36px); letter-spacing:-0.03em;}
+.wordmark .tick{color:var(--accent);}
+.tagline{font-size:14px; color:var(--muted);}
+.tagline strong{color:var(--accent); font-weight:600;}
+
+.tabs{display:flex; gap:0; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; margin-bottom:18px; background:var(--card);}
+.tab{flex:1; padding:12px 10px; font:inherit; font-weight:600; font-size:15px; background:transparent; border:none; cursor:pointer; color:var(--muted); border-bottom:3px solid transparent;}
+.tab[aria-selected="true"]{color:var(--ink); border-bottom-color:var(--accent); background:var(--accent-soft);}
+.tab:focus-visible{outline:2px solid var(--accent); outline-offset:-4px;}
+
+.card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:22px; margin-bottom:16px;}
+.card h2{font-size:18px; font-weight:700; margin-bottom:4px; letter-spacing:-0.01em;}
+.hint{font-size:13.5px; color:var(--muted); margin-bottom:14px; line-height:1.45;}
+.hint code{font-family:'IBM Plex Mono',monospace; font-size:12.5px; background:var(--accent-soft); padding:1px 5px; border-radius:4px;}
+
+label{display:block; font-size:13px; font-weight:600; margin-bottom:5px; color:var(--ink);}
+input[type=text], select{
+  width:100%; font-family:'IBM Plex Mono',monospace; font-size:16px; padding:11px 12px;
+  border:1.5px solid var(--line); border-radius:8px; background:#FBFCFA; color:var(--ink);
+}
+select{font-family:'Archivo',sans-serif;}
+input:focus, select:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(36,96,75,.15);}
+.field{margin-bottom:14px;}
+.row{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+@media(max-width:540px){.row{grid-template-columns:1fr;}}
+.sub{font-size:12px; color:var(--muted); margin-top:4px;}
+
+button.go{
+  font:inherit; font-weight:700; font-size:15px; padding:12px 22px; border:none; border-radius:8px;
+  background:var(--accent); color:#fff; cursor:pointer; transition:background .15s;
+}
+button.go:hover{background:#1C4F3D;}
+button.go:focus-visible{outline:2px solid var(--ink); outline-offset:2px;}
+
+/* result */
+.result{display:none; position:relative;}
+.result.show{display:block; animation:pop .25s ease;}
+@keyframes pop{from{opacity:0; transform:translateY(6px);}to{opacity:1; transform:none;}}
+@media(prefers-reduced-motion:reduce){.result.show{animation:none;}}
+
+.verdict{display:flex; align-items:center; gap:14px; margin-bottom:16px; flex-wrap:wrap;}
+.stamp{
+  font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:15px; letter-spacing:.14em;
+  padding:7px 16px; border:2.5px solid currentColor; border-radius:6px; transform:rotate(-3deg);
+  text-transform:uppercase;
+}
+.stamp.ok{color:var(--valid); background:rgba(30,122,78,.06);}
+.stamp.bad{color:var(--invalid); background:rgba(168,50,38,.06); transform:rotate(2deg);}
+.verdict p{font-size:14px; color:var(--muted); flex:1; min-width:200px;}
+
+.ibanBox{
+  font-family:'IBM Plex Mono',monospace; font-size:clamp(18px,4vw,26px); font-weight:600;
+  letter-spacing:.02em; line-height:1.9; word-break:break-all; margin-bottom:6px;
+}
+.ibanBox .grp{margin-right:.45em; white-space:nowrap;}
+.seg{border-bottom:3px solid; padding-bottom:1px;}
+.seg-country{color:var(--seg-country); border-color:var(--seg-country);}
+.seg-check{color:var(--seg-check); border-color:var(--seg-check);}
+.seg-bank{color:var(--seg-bank); border-color:var(--seg-bank);}
+.seg-branch{color:var(--seg-branch); border-color:var(--seg-branch);}
+.seg-acct{color:var(--seg-acct); border-color:var(--seg-acct);}
+.seg-natl{color:var(--seg-natl); border-color:var(--seg-natl);}
+
+.legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:10px 0 14px;}
+.chip{display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted);}
+.chip i{width:14px; height:4px; border-radius:2px; display:inline-block;}
+
+.copyBtn{
+  font:inherit; font-size:13px; font-weight:600; padding:7px 14px; border-radius:7px;
+  border:1.5px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer;
+}
+.copyBtn:hover{border-color:var(--accent); color:var(--accent);}
+.errList{list-style:none;}
+.errList li{font-size:14px; color:var(--invalid); padding:4px 0; padding-left:20px; position:relative;}
+.errList li::before{content:"×"; position:absolute; left:0; font-weight:700;}
+.completions{margin-top:8px;}
+.completions button{
+  display:block; width:100%; text-align:left; font-family:'IBM Plex Mono',monospace; font-size:15px;
+  padding:9px 12px; margin-bottom:6px; border:1.5px solid var(--line); border-radius:7px;
+  background:#FBFCFA; cursor:pointer; color:var(--ink);
+}
+.completions button:hover{border-color:var(--accent);}
+footer{margin-top:28px; font-size:12.5px; color:var(--muted); line-height:1.6;}
+.hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="wordmark">IBAN Calculator<span class="tick"> ✓</span></div>
+  <div class="tagline"><strong>No ads.</strong> Runs entirely in your browser — nothing is sent anywhere.</div>
+</header>
+
+<div class="tabs" role="tablist">
+  <button class="tab" role="tab" id="tab-validate" aria-selected="true" aria-controls="panel-validate">Validate an IBAN</button>
+  <button class="tab" role="tab" id="tab-calc" aria-selected="false" aria-controls="panel-calc">Calculate an IBAN</button>
+</div>
+
+<!-- ============ VALIDATE ============ -->
+<section class="card" id="panel-validate" role="tabpanel" aria-labelledby="tab-validate">
+  <h2>Validate an IBAN</h2>
+  <p class="hint">Checks the country, length, format and mod-97 checksum. If a digit or two is unknown, type <code>?</code> in its place (e.g. <code>DE12500?0?170648489890</code>) and the missing digits will be completed automatically.</p>
+  <div class="field">
+    <label for="vIban">IBAN</label>
+    <input type="text" id="vIban" placeholder="DE89 3704 0044 0532 0130 00" autocomplete="off" spellcheck="false">
+  </div>
+  <button class="go" id="vGo">Validate IBAN</button>
+
+  <div class="result" id="vResult" aria-live="polite"></div>
+</section>
+
+<!-- ============ CALCULATE ============ -->
+<section class="card hidden" id="panel-calc" role="tabpanel" aria-labelledby="tab-calc">
+  <h2>Calculate an IBAN</h2>
+  <p class="hint">Pick a country and enter the domestic bank details. Check digits — including national check digits (Belgium, France, Spain, Italy, Portugal) — are computed automatically.</p>
+  <div class="field">
+    <label for="cCountry">Country</label>
+    <select id="cCountry"></select>
+  </div>
+  <div id="cFields"></div>
+  <button class="go" id="cGo">Calculate IBAN</button>
+
+  <div class="result" id="cResult" aria-live="polite"></div>
+</section>
+
+<footer>
+  <p><strong>How it works:</strong> every IBAN carries two check digits computed with the ISO 7064 mod-97-10 algorithm. A valid checksum means the IBAN is <em>well-formed</em>; it does not prove the account exists. Bank-name and BIC lookups need an up-to-date bank directory, which this offline tool intentionally doesn't bundle.</p>
+</footer>
+</div>
+
+<script>
+/* ================= registry ================= */
+const COUNTRIES = {
+AD:["Andorra",24],AE:["United Arab Emirates",23],AL:["Albania",28],AT:["Austria",20],BA:["Bosnia and Herzegovina",20],
+BE:["Belgium",16],BG:["Bulgaria",22],BY:["Belarus",28],CH:["Switzerland",21],CY:["Cyprus",28],CZ:["Czech Republic",24],
+DE:["Germany",22],DK:["Denmark",18],EE:["Estonia",20],EG:["Egypt",29],ES:["Spain",24],FI:["Finland",18],FR:["France",27],
+GB:["United Kingdom",22],GE:["Georgia",22],GI:["Gibraltar",23],GR:["Greece",27],HR:["Croatia",21],HU:["Hungary",28],
+IE:["Ireland",22],IL:["Israel",23],IS:["Iceland",26],IT:["Italy",27],JO:["Jordan",30],KZ:["Kazakhstan",20],LB:["Lebanon",28],
+LI:["Liechtenstein",21],LT:["Lithuania",20],LU:["Luxembourg",20],LV:["Latvia",21],MC:["Monaco",27],MD:["Moldova",24],
+ME:["Montenegro",22],MT:["Malta",31],MU:["Mauritius",30],NL:["Netherlands",18],NO:["Norway",15],PL:["Poland",28],
+PT:["Portugal",25],RO:["Romania",24],RS:["Serbia",22],SE:["Sweden",24],SI:["Slovenia",19],SK:["Slovakia",24],
+SM:["San Marino",27],TR:["Türkiye",26],VA:["Vatican City",22],XK:["Kosovo",20]};
+
+/* BBAN breakdown: [label, length, cssClass] after the CC + check digits */
+const SEGMENTS = {
+DE:[["Bank code (BLZ)",8,"bank"],["Account number",10,"acct"]],
+AT:[["Bank code (BLZ)",5,"bank"],["Account number",11,"acct"]],
+NL:[["Bank code",4,"bank"],["Account number",10,"acct"]],
+BE:[["Bank code",3,"bank"],["Account number",7,"acct"],["National check",2,"natl"]],
+GB:[["Bank code",4,"bank"],["Sort code",6,"branch"],["Account number",8,"acct"]],
+IE:[["Bank code",4,"bank"],["Sort code",6,"branch"],["Account number",8,"acct"]],
+FR:[["Bank code",5,"bank"],["Branch code",5,"branch"],["Account number",11,"acct"],["RIB key",2,"natl"]],
+MC:[["Bank code",5,"bank"],["Branch code",5,"branch"],["Account number",11,"acct"],["RIB key",2,"natl"]],
+ES:[["Bank code",4,"bank"],["Branch code",4,"branch"],["National check",2,"natl"],["Account number",10,"acct"]],
+IT:[["CIN",1,"natl"],["Bank code (ABI)",5,"bank"],["Branch code (CAB)",5,"branch"],["Account number",12,"acct"]],
+SM:[["CIN",1,"natl"],["Bank code (ABI)",5,"bank"],["Branch code (CAB)",5,"branch"],["Account number",12,"acct"]],
+CH:[["Bank clearing no.",5,"bank"],["Account number",12,"acct"]],
+LI:[["Bank code",5,"bank"],["Account number",12,"acct"]],
+PL:[["Bank & branch code",8,"bank"],["Account number",16,"acct"]],
+PT:[["Bank code",4,"bank"],["Branch code",4,"branch"],["Account number",11,"acct"],["National check",2,"natl"]],
+LU:[["Bank code",3,"bank"],["Account number",13,"acct"]],
+NO:[["Bank code",4,"bank"],["Account number",6,"acct"],["National check",1,"natl"]],
+DK:[["Bank code",4,"bank"],["Account number",9,"acct"],["National check",1,"natl"]],
+FI:[["Bank code",6,"bank"],["Account number",7,"acct"],["National check",1,"natl"]],
+SE:[["Bank code",3,"bank"],["Account number",16,"acct"],["National check",1,"natl"]],
+CZ:[["Bank code",4,"bank"],["Account prefix",6,"branch"],["Account number",10,"acct"]],
+SK:[["Bank code",4,"bank"],["Account prefix",6,"branch"],["Account number",10,"acct"]],
+HR:[["Bank code",7,"bank"],["Account number",10,"acct"]],
+SI:[["Bank & branch code",5,"bank"],["Account number",8,"acct"],["National check",2,"natl"]],
+HU:[["Bank & branch code",8,"bank"],["Account number",16,"acct"]],
+TR:[["Bank code",5,"bank"],["Reserved",1,"branch"],["Account number",16,"acct"]],
+};
+
+/* ================= core maths ================= */
+const cleanIban = s => (s||'').toUpperCase().replace(/[^A-Z0-9?]/g,'');
+function mod97(n){ let r=0; for(let i=0;i<n.length;i++) r=(r*10+(n.charCodeAt(i)-48))%97; return r; }
+function expand(s){ let o=''; for(const ch of s){ const c=ch.charCodeAt(0); o += c>=65 ? String(c-55) : ch; } return o; }
+const checksumOK = ib => mod97(expand(ib.slice(4)+ib.slice(0,4)))===1;
+const checkDigits = (cc,bban) => String(98-mod97(expand(bban+cc+'00'))).padStart(2,'0');
+
+/* national check helpers */
+function beCheck(b,a){ let n=Number(b+a)%97; if(n===0)n=97; return String(n).padStart(2,'0'); }
+const FR_MAP={A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,I:9,J:1,K:2,L:3,M:4,N:5,O:6,P:7,Q:8,R:9,S:2,T:3,U:4,V:5,W:6,X:7,Y:8,Z:9};
+const frNum = s => Number([...s].map(c=>/[A-Z]/.test(c)?FR_MAP[c]:c).join(''));
+const frKey = (b,g,c) => String(97-((89*frNum(b)+15*frNum(g)+3*frNum(c))%97)).padStart(2,'0');
+function esDC(t){ const w=[1,2,4,8,5,10,9,7,3,6]; let s=0; for(let i=0;i<10;i++)s+=w[i]*+t[i]; let r=11-(s%11); if(r===10)r=1; if(r===11)r=0; return String(r); }
+function itCIN(b){ const odd=[1,0,5,7,9,13,15,17,19,21,2,4,18,20,11,3,6,8,12,14,16,10,22,25,24,23]; let s=0;
+  for(let i=0;i<b.length;i++){ const ch=b[i], v=/[0-9]/.test(ch)?+ch:ch.charCodeAt(0)-65; s+= i%2===0 ? odd[v] : v; }
+  return String.fromCharCode(65+(s%26)); }
+const ptCheck = n => String(98-mod97(n+'00')).padStart(2,'0');
+
+/* ================= rendering helpers ================= */
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function segmentSpans(iban){
+  const cc=iban.slice(0,2);
+  const parts=[["Country",2,"country"],["IBAN check",2,"check"]];
+  let rest;
+  if(SEGMENTS[cc] && SEGMENTS[cc].reduce((a,s)=>a+s[1],0)===iban.length-4){ rest=SEGMENTS[cc]; }
+  else { rest=[["Account (BBAN)",iban.length-4,"acct"]]; }
+  const all=parts.concat(rest);
+  // char -> class map, plus legend
+  const cls=[]; const legend=[];
+  let pos=0;
+  for(const [label,len,k] of all){
+    legend.push([label,k]);
+    for(let i=0;i<len;i++) cls[pos++]=k;
+  }
+  // build grouped-by-4 markup
+  let html='';
+  for(let g=0; g<iban.length; g+=4){
+    let grp='';
+    for(let i=g; i<Math.min(g+4,iban.length); i++)
+      grp += `<span class="seg seg-${cls[i]}">${iban[i]}</span>`;
+    html += `<span class="grp">${grp}</span>`;
+  }
+  const legendHtml = legend.map(([label,k])=>
+    `<span class="chip"><i style="background:var(--seg-${k})"></i>${esc(label)}</span>`).join('');
+  return {html, legendHtml};
+}
+
+function resultCard(el, iban, ok, msg, errors){
+  let inner='';
+  if(ok){
+    const {html, legendHtml}=segmentSpans(iban);
+    const pretty=iban.replace(/(.{4})/g,'$1 ').trim();
+    inner=`
+      <div class="verdict"><span class="stamp ok">Valid</span><p>${esc(msg)}</p></div>
+      <div class="ibanBox">${html}</div>
+      <div class="legend">${legendHtml}</div>
+      <button class="copyBtn" data-copy="${pretty}">Copy IBAN</button>`;
+  } else {
+    inner=`
+      <div class="verdict"><span class="stamp bad">Invalid</span><p>${esc(msg)}</p></div>
+      <ul class="errList">${errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
+  }
+  el.innerHTML=`<hr style="border:none;border-top:1px solid var(--line);margin:20px 0">`+inner;
+  el.classList.add('show');
+  el.querySelectorAll('.copyBtn').forEach(b=>b.addEventListener('click',()=>{
+    navigator.clipboard.writeText(b.dataset.copy).then(()=>{ b.textContent='Copied ✓'; setTimeout(()=>b.textContent='Copy IBAN',1500); });
+  }));
+}
+
+/* ================= validate flow ================= */
+function doValidate(){
+  const raw=cleanIban($('vIban').value);
+  const el=$('vResult');
+  if(!raw){ el.classList.remove('show'); return; }
+
+  if(raw.includes('?')){
+    const idx=[...raw].map((c,i)=>c==='?'?i:-1).filter(i=>i>=0);
+    if(idx.length>4){
+      resultCard(el, raw, false, 'Too many unknown digits.', ['Automatic completion supports up to 4 question marks.']);
+      return;
+    }
+    const matches=[];
+    for(let n=0;n<Math.pow(10,idx.length) && matches.length<=12;n++){
+      const d=String(n).padStart(idx.length,'0');
+      const a=[...raw]; idx.forEach((p,k)=>a[p]=d[k]);
+      const cand=a.join(''), cc=cand.slice(0,2);
+      if(COUNTRIES[cc] && cand.length===COUNTRIES[cc][1] && /^[A-Z]{2}[0-9]{2}[A-Z0-9]*$/.test(cand) && checksumOK(cand)) matches.push(cand);
+    }
+    if(matches.length===0){
+      resultCard(el, raw, false, 'No completion of this IBAN passes the checksum.', ['Check the country code, length and known digits.']);
+    } else {
+      el.innerHTML=`<hr style="border:none;border-top:1px solid var(--line);margin:20px 0">
+        <div class="verdict"><span class="stamp ok">Completed</span>
+        <p>${matches.length===1?'Exactly one completion passes the checksum — click it for the full breakdown.':matches.length+' completions pass the checksum. The correct one can\u2019t be determined from the checksum alone — click any to inspect.'}</p></div>
+        <div class="completions">${matches.map(m=>`<button data-iban="${m}">${m.replace(/(.{4})/g,'$1 ').trim()}</button>`).join('')}</div>`;
+      el.classList.add('show');
+      el.querySelectorAll('[data-iban]').forEach(b=>b.addEventListener('click',()=>{ $('vIban').value=b.dataset.iban; doValidate(); }));
+    }
+    return;
+  }
+
+  const errors=[];
+  const cc=raw.slice(0,2);
+  if(!/^[A-Z]{2}[0-9]{2}[A-Z0-9]*$/.test(raw)) errors.push('An IBAN starts with a two-letter country code followed by two check digits.');
+  else if(!COUNTRIES[cc]) errors.push(`“${cc}” is not a country code in the IBAN registry this tool knows.`);
+  else if(raw.length!==COUNTRIES[cc][1]) errors.push(`A ${COUNTRIES[cc][0]} IBAN has ${COUNTRIES[cc][1]} characters — this one has ${raw.length}.`);
+  else if(!checksumOK(raw)) errors.push('The mod-97 checksum fails: at least one character is wrong, missing or swapped.');
+
+  if(errors.length){ resultCard(el, raw, false, 'This IBAN is not valid.', errors); }
+  else { resultCard(el, raw, true, `Well-formed ${COUNTRIES[cc][0]} IBAN — length, format and mod-97 checksum all pass.`); }
+}
+$('vGo').addEventListener('click', doValidate);
+$('vIban').addEventListener('keydown', e=>{ if(e.key==='Enter') doValidate(); });
+
+/* ================= calculate flow ================= */
+/* field: [key,label,hint, regex, padTo(null=exact)] ; build(vals)-> bban string or {error} */
+const CALC = {
+DE:{fields:[["bank","Bank code (Bankleitzahl)","8 digits",/^\d{8}$/],["acct","Account number (Kontonummer)","up to 10 digits",/^\d{1,10}$/,10]],
+    build:v=>v.bank+v.acct},
+AT:{fields:[["bank","Bank code (Bankleitzahl)","5 digits",/^\d{5}$/],["acct","Account number","up to 11 digits",/^\d{1,11}$/,11]],
+    build:v=>v.bank+v.acct},
+NL:{fields:[["bank","Bank code","4 letters, e.g. INGB, ABNA, RABO",/^[A-Z]{4}$/],["acct","Account number","up to 10 digits",/^\d{1,10}$/,10]],
+    build:v=>v.bank+v.acct},
+BE:{fields:[["bank","Bank code","3 digits",/^\d{3}$/],["acct","Account number","7 digits (without the 2 national check digits)",/^\d{7}$/]],
+    build:v=>v.bank+v.acct+beCheck(v.bank,v.acct)},
+GB:{fields:[["bank","Bank code","first 4 letters of the BIC, e.g. NWBK, BARC, HBUK",/^[A-Z]{4}$/],["sort","Sort code","6 digits",/^\d{6}$/],["acct","Account number","up to 8 digits",/^\d{1,8}$/,8]],
+    build:v=>v.bank+v.sort+v.acct},
+IE:{fields:[["bank","Bank code","first 4 letters of the BIC, e.g. AIBK, BOFI",/^[A-Z]{4}$/],["sort","Sort code","6 digits",/^\d{6}$/],["acct","Account number","up to 8 digits",/^\d{1,8}$/,8]],
+    build:v=>v.bank+v.sort+v.acct},
+FR:{fields:[["bank","Bank code (Code banque)","5 digits",/^\d{5}$/],["branch","Branch code (Code guichet)","5 digits",/^\d{5}$/],["acct","Account number","up to 11 characters",/^[A-Z0-9]{1,11}$/,11]],
+    build:v=>v.bank+v.branch+v.acct+frKey(v.bank,v.branch,v.acct)},
+ES:{fields:[["bank","Bank code (Entidad)","4 digits",/^\d{4}$/],["branch","Branch code (Oficina)","4 digits",/^\d{4}$/],["acct","Account number","up to 10 digits",/^\d{1,10}$/,10]],
+    build:v=>v.bank+v.branch+esDC('00'+v.bank+v.branch)+esDC(v.acct)+v.acct},
+IT:{fields:[["bank","Bank code (ABI)","5 digits",/^\d{5}$/],["branch","Branch code (CAB)","5 digits",/^\d{5}$/],["acct","Account number","up to 12 characters",/^[A-Z0-9]{1,12}$/,12]],
+    build:v=>itCIN(v.bank+v.branch+v.acct)+v.bank+v.branch+v.acct},
+CH:{fields:[["bank","Bank clearing number","3–5 digits",/^\d{3,5}$/,5],["acct","Account number","up to 12 characters",/^[A-Z0-9]{1,12}$/,12]],
+    build:v=>v.bank+v.acct},
+PL:{fields:[["bank","Bank & branch code","8 digits",/^\d{8}$/],["acct","Account number","up to 16 digits",/^\d{1,16}$/,16]],
+    build:v=>v.bank+v.acct},
+PT:{fields:[["bank","Bank code","4 digits",/^\d{4}$/],["branch","Branch code","4 digits",/^\d{4}$/],["acct","Account number","up to 11 digits",/^\d{1,11}$/,11]],
+    build:v=>v.bank+v.branch+v.acct+ptCheck(v.bank+v.branch+v.acct)},
+LU:{fields:[["bank","Bank code","3 digits",/^\d{3}$/],["acct","Account number","13 characters",/^[A-Z0-9]{13}$/]],
+    build:v=>v.bank+v.acct},
+};
+
+/* pad helper — pads numeric-style values on the left with zeros */
+function padVals(cc, vals){
+  const out={};
+  for(const f of CALC[cc].fields){
+    const [key,,,re,padTo]=f;
+    let v=(vals[key]||'').toUpperCase().replace(/\s+/g,'');
+    if(padTo && v.length<padTo) v=v.padStart(padTo,'0');
+    out[key]=v;
+    if(!re.test(vals[key].toUpperCase().replace(/\s+/g,''))) out.__err = f[1]+': expected '+f[2]+'.';
+  }
+  return out;
+}
+
+function buildCountrySelect(){
+  const sel=$('cCountry');
+  const codes=Object.keys(COUNTRIES).sort((a,b)=>COUNTRIES[a][0].localeCompare(COUNTRIES[b][0]));
+  sel.innerHTML=codes.map(c=>`<option value="${c}" ${c==='DE'?'selected':''}>${COUNTRIES[c][0]} (${c})</option>`).join('');
+  sel.addEventListener('change', renderFields);
+  renderFields();
+}
+function renderFields(){
+  const cc=$('cCountry').value;
+  const box=$('cFields');
+  $('cResult').classList.remove('show');
+  if(CALC[cc]){
+    box.innerHTML=CALC[cc].fields.map(([key,label,hint])=>`
+      <div class="field">
+        <label for="cf-${key}">${esc(label)}</label>
+        <input type="text" id="cf-${key}" autocomplete="off" spellcheck="false">
+        <div class="sub">${esc(hint)}</div>
+      </div>`).join('');
+  } else {
+    const len=COUNTRIES[cc][1]-4;
+    box.innerHTML=`
+      <div class="field">
+        <label for="cf-bban">Domestic account identifier (BBAN)</label>
+        <input type="text" id="cf-bban" autocomplete="off" spellcheck="false" maxlength="${len}">
+        <div class="sub">The full ${len}-character national part of the IBAN — this tool computes the two IBAN check digits for it.</div>
+      </div>`;
+  }
+}
+function doCalc(){
+  const cc=$('cCountry').value;
+  const el=$('cResult');
+  let bban, err;
+  if(CALC[cc]){
+    const raw={};
+    for(const [key] of CALC[cc].fields) raw[key]=$('cf-'+key).value;
+    if(Object.values(raw).some(v=>!v.trim())){ err='Please fill in every field.'; }
+    else{
+      const vals=padVals(cc, raw);
+      if(vals.__err) err=vals.__err;
+      else bban=CALC[cc].build(vals);
+    }
+  } else {
+    const v=cleanIban($('cf-bban').value);
+    const need=COUNTRIES[cc][1]-4;
+    if(v.length!==need) err=`The BBAN for ${COUNTRIES[cc][0]} must be exactly ${need} characters (you entered ${v.length}).`;
+    else bban=v;
+  }
+  if(err){ resultCard(el, '', false, 'Couldn\u2019t calculate an IBAN.', [err]); return; }
+  const iban=cc+checkDigits(cc,bban)+bban;
+  if(iban.length!==COUNTRIES[cc][1]){
+    resultCard(el, '', false, 'Couldn\u2019t calculate an IBAN.', ['The combined fields don\u2019t add up to the required length for '+COUNTRIES[cc][0]+'.']);
+    return;
+  }
+  const natl = {BE:'Belgian national check digits',FR:'RIB key',ES:'Spanish DC digits',IT:'CIN character',PT:'NIB check digits'}[cc];
+  resultCard(el, iban, true, `IBAN calculated — mod-97 check digits${natl? ' and the '+natl:''} computed automatically. Always confirm against an official statement before sending money.`);
+}
+$('cGo').addEventListener('click', doCalc);
+
+/* ================= tabs ================= */
+const tabs=[['tab-validate','panel-validate'],['tab-calc','panel-calc']];
+tabs.forEach(([t,p])=>{
+  $(t).addEventListener('click',()=>{
+    tabs.forEach(([t2,p2])=>{ $(t2).setAttribute('aria-selected', t2===t); $(p2).classList.toggle('hidden', p2!==p); });
+  });
+});
+
+buildCountrySelect();
+</script>
+</body>
+</html>
